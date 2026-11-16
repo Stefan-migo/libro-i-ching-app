@@ -1,9 +1,11 @@
+import {cloudConfigured,connectJournal} from "./cloud-journal.mjs";
 import {hexagramReadings} from "./hexagram-readings.mjs";
 import {practiceGuide,yarrowInstructions} from "./practice-guide.mjs";
 import {illustrationDescriptions} from "./illustrations.mjs";
 import {figures,trigrams,trigramOrder,states,figureNumber,calculate,choosePassages,simulatedYarrow} from "./engine.mjs";
 
 const main=document.querySelector("main");
+if(cloudConfigured)document.getElementById("account-nav").hidden=false;
 const book=await fetch(new URL("./book.json",import.meta.url)).then(response=>{
  if(!response.ok) throw new Error("No se pudo cargar el libro.");
  return response.json();
@@ -16,6 +18,8 @@ try {
  if(Array.isArray(saved))journal=saved.filter(item=>item&&typeof item.id==="string"&&/^[\w-]+$/.test(item.id)&&["coins","yarrow"].includes(item.method)&&Array.isArray(item.values)&&item.values.length===6&&item.values.every(value=>Object.hasOwn(states,value)&&Number.isInteger(value)));
 }
 catch {storageAvailable=false;}
+const localEntries=journal;
+if(cloudConfigured)journal=[];
 let question="", method="coins", input="coins", values=[], coins=[false,false,false], coinTouched=[false,false,false], reflection="", activeId=null;
 let topic="", context="", followUp="";
 let language="es", readingMode="guided", builder="111000";
@@ -136,6 +140,97 @@ function passage(ref, linkFigure = true) {
 }
 function editionChoices() {return `<div class="choose" aria-label="Idioma del texto">${Object.entries(labels).map(([id,label])=>toggle(label,`lang:${id}`,language===id)).join("")}</div>`;}
 function status(message){const el=document.querySelector("[role=status]");if(el)el.textContent=message;}
+
+let cloud=null, account=null, accountMode="login", journalMessage="";
+let journalBusy=false, journalLoading=cloudConfigured, journalReady=!cloudConfigured;
+let accountVersion=0;
+const importedLocally=new Set();
+
+function accountPage(){
+ const intro=heading("CUENTA","Tu cuenta","Accede a tus consultas desde cualquier dispositivo.");
+ if(!cloud) return intro+'<section class="panel"><p>El acceso a cuentas todavía no está disponible.</p></section>';
+ if(account) return intro+`<section class="panel"><p>${html(account.email)}</p><div class="actions"><a class="button primary" href="#diario">Abrir mi diario</a>${action("Cerrar sesión","sign-out")}</div><p class="toast" role="status"></p></section>`;
+ const signup=accountMode==="signup";
+ return intro+`<section class="panel"><div class="choose">${toggle("Iniciar sesión","auth-mode:login",!signup)}${toggle("Crear cuenta","auth-mode:signup",signup)}</div>
+ <form id="account-form">
+ <label class="field">Correo electrónico<input name="email" type="email" autocomplete="email" required></label>
+ <label class="field">Contraseña<input name="password" type="password" autocomplete="${signup?"new-password":"current-password"}" ${signup?'minlength="6"':""} required></label>
+ <button class="button primary" type="submit">${signup?"Crear cuenta":"Iniciar sesión"}</button>
+ </form><p class="toast" role="status"></p></section>`;
+}
+
+async function refreshJournal(){
+ const userId=account?.id, version=accountVersion;
+ if(!userId)return;
+ journalLoading=true;
+ journalMessage="";
+ if(route()[0]==="diario") show();
+ try{
+  const entries=await cloud.list(userId);
+  if(accountVersion!==version)return;
+  journal=entries;
+  journalReady=true;
+ }catch{
+  if(accountVersion!==version)return;
+  journalReady=false;
+  journalMessage="No se pudo cargar tu diario. Vuelve a intentarlo.";
+ }finally{
+  if(accountVersion===version){
+   journalLoading=false;
+   if(["diario","resultado"].includes(route()[0])) show();
+  }
+ }
+}
+
+async function syncAccount(user){
+ const previous=account?.id;
+ if(previous===user?.id && (previous || !journalLoading))return;
+ accountVersion++;
+ journalBusy=false;
+ account=user??null;
+ journal=[];
+ journalReady=false;
+ journalLoading=false;
+ journalMessage="";
+ if(previous){restart();question="";topic="";context="";}
+ if(route()[0]==="cuenta" && account) location.hash=values.length===6?"resultado":"diario";
+ else if(previous && route()[0]==="resultado") location.hash="diario";
+ else show();
+ if(account) await refreshJournal();
+}
+
+async function startAccount(){
+ try{
+  cloud=await connectJournal();
+  cloud.auth.onAuthStateChange((_event,session)=>{
+   setTimeout(()=>void syncAccount(session?.user),0);
+  });
+  if(route()[0]==="cuenta") show();
+ }catch{
+  journalLoading=false;
+  if(["diario","resultado","cuenta"].includes(route()[0])) show();
+ }
+}
+
+async function journalOperation(button, operation){
+ const accountId=account?.id, version=accountVersion;
+ if(!accountId || !journalReady || journalBusy)return;
+ journalBusy=true;
+ if(button)button.disabled=true;
+ try{
+  return await operation(accountId,()=>accountVersion===version);
+ }catch(error){
+  if(accountVersion!==version)return;
+  const message=error.message==="journal_conflict"
+   ?"La consulta cambió en otro dispositivo. Tu borrador sigue aquí. Abre el diario y vuelve a cargar la entrada antes de editarla."
+   :"No se pudo guardar el cambio en tu cuenta. Vuelve a intentarlo.";
+  status(message);
+ }finally{
+  if(accountVersion===version)journalBusy=false;
+  if(button)button.disabled=false;
+ }
+}
+
 function route() {return (location.hash.slice(1)||"inicio").split("/");}
 function show(reFocus=false) {
  const [page,id]=route();
@@ -144,7 +239,7 @@ function show(reFocus=false) {
   if(active)nav.setAttribute("aria-current","page");else nav.removeAttribute("aria-current");
  }
  if(!book) {main.innerHTML=heading("I CHING","El libro de los cambios","El texto no pudo cargarse. Vuelve a abrir la página para intentarlo de nuevo.");return;}
- const pages={consultar:consult, resultado:reading, explorar:explore, aprender:learn, diario:diary, fuentes:sources, hex:()=>hexDetail(countPattern.test(id)?Number(id):0)};
+ const pages={consultar:consult, resultado:reading, explorar:explore, aprender:learn, diario:diary, cuenta:accountPage, fuentes:sources, hex:()=>hexDetail(countPattern.test(id)?Number(id):0)};
  if(Object.hasOwn(pages,page)) main.innerHTML=pages[page]();
  else main.replaceChildren(document.querySelector("#landing").content.cloneNode(true));
  if(page==="explorar")filterGrid("");
@@ -178,6 +273,9 @@ function reading(){
  const result=calculate(values);
  const saved=journal.find(item=>item.id===activeId);
  const followUps=saved?.followUps??[];
+ const saveControl=!cloudConfigured||journalReady
+  ? action(activeId?"Actualizar en el diario":"Guardar en el diario","save","primary")
+  : account?"<a class=\"button\" href=\"#diario\">Revisar el estado del diario</a>":'<a class="button primary" href="#cuenta">Inicia sesión para guardar</a>';
  const guides=[
   "Sin cambios, la lectura guiada se centra en el dictamen inicial.",
   "Con un cambio, lee el texto de esa línea en el hexagrama inicial.",
@@ -200,7 +298,7 @@ function reading(){
  <label class="field">Contexto <small>¿Qué estaba pasando al momento de consultar?</small><textarea id="context" maxlength="1600">${html(context)}</textarea></label>
  <label class="field">Primera reflexión <small>¿Qué pasaje te llamó la atención? ¿Qué quedó abierto?</small><textarea id="reflection" maxlength="4600">${html(reflection)}</textarea></label>
  ${saved?`<h3>Relecturas</h3>${followUps.length?`<ul class="journal-followups">${followUps.map(note=>`<li><time datetime="${html(note.date)}">${diaryDate(note.date)}</time><p>${html(note.text)}</p></li>`).join("")}</ul>`:`<p class="fine">Todavía no hay relecturas.</p>`}<label class="field">Añadir una relectura <small>Al actualizar la entrada, esta nota se guarda con la fecha de hoy.</small><textarea id="follow-up" maxlength="2400" placeholder="¿Qué ocurrió desde la consulta? ¿Cómo la lees ahora?">${html(followUp)}</textarea></label>`:""}
- <div class="actions">${action(activeId?"Actualizar en el diario":"Guardar en el diario","save","primary")} ${saved?`<a class="button" href="#diario">Ver mi diario</a>`:`<a class="button" href="#consultar">Volver a la tirada</a>`} ${action("Nueva consulta","new")}</div>
+ <div class="actions">${saveControl} ${saved?`<a class="button" href="#diario">Ver mi diario</a>`:`<a class="button" href="#consultar">Volver a la tirada</a>`} ${action("Nueva consulta","new")}</div>
  <p class="toast" role="status"></p></section></div>`;
 }
 function gridTile(entry){
@@ -255,12 +353,15 @@ function learn(){
  <p class="fine">*Modelo convencional de la simulación de milenrama. El gesto de dividir varillas físicas puede producir diferencias.</p><a class="button primary" href="#consultar">Probar una tirada ↗</a></section></div>`;
 }
 function diary(){
+ if(cloudConfigured && !account) return heading("DIARIO","Tus consultas","Inicia sesión para acceder a tu diario personal.")+'<a class="button primary" href="#cuenta">Ir a mi cuenta</a>';
  const list=journal.map(item=>{
   const result=calculate(item.values);
   return `<article class="journal-item"><p class="eyebrow">${diaryDate(item.date)} · ${methods[item.method]}${item.topic?` · ${html(item.topic)}`:""}</p><h3>${html(item.question||"Consulta sin pregunta")}</h3><div>${hexLink(result.initial,null)}${result.changes.length?` → ${hexLink(result.final,null)}`:""}</div>${item.reflection?`<p>${html(item.reflection)}</p>`:""}${item.followUps?.length?`<span class="fine">Relecturas: ${item.followUps.length}</span>`:""}<div class="actions">${action("Abrir lectura",`open:${item.id}`,"primary")}${action("Eliminar",`delete:${item.id}`)}</div></article>`;
  });
- return heading("DIARIO","Tus consultas","Guarda tus consultas en este navegador. Al volver a una entrada, puedes revisar la tirada y añadir una relectura fechada.")+
- `<div class="flow"><p class="fine"><a href="#aprender/diario">Cómo llevar y releer tu diario</a></p>${!storageAvailable?`<p class="toast">Este navegador no permite usar el almacenamiento local.</p>`:""}${list.length?list.join(""):`<section class="panel empty-state"><h2>Aún no hay consultas</h2><p class="muted">Luego de una tirada, puedes guardar la pregunta, el resultado y tu reflexión.</p><a class="button primary" href="#consultar">Abrir una consulta</a></section>`}</div><dialog id="delete-dialog"><form method="dialog"><h2>Eliminar esta consulta</h2><p>Se borrarán la tirada guardada y su reflexión de este navegador.</p><div class="row"><button class="button" value="cancel">Cancelar</button><button class="button primary" value="delete">Eliminar</button></div></form></dialog>`;
+ const intro=cloudConfigured?"Las consultas se guardan en tu cuenta. Puedes añadir una relectura fechada.":"Guarda tus consultas en este navegador. Puedes añadir una relectura fechada.";
+ const cloudTools=cloudConfigured?`<div class="actions"><a class="button" href="#cuenta">Mi cuenta</a>${!journalLoading?action("Recargar diario","reload-journal"):""}${journalReady&&!journalLoading&&localEntries.length&&!importedLocally.has(account.id)?action("Importar consultas de este navegador","import-journal"):""}</div><p class="toast" role="status">${html(journalLoading?"Cargando tus consultas…":journalMessage)}</p>`:"";
+ return heading("DIARIO","Tus consultas",intro)+
+ `<div class="flow">${cloudTools}<p class="fine"><a href="#aprender/diario">Cómo llevar y releer tu diario</a></p>${!cloudConfigured&&!storageAvailable?`<p class="toast">Este navegador no permite usar el almacenamiento local.</p>`:""}${journalLoading||!journalReady?"":list.length?list.join(""):`<section class="panel empty-state"><h2>Aún no hay consultas</h2><p class="muted">Luego de una tirada, puedes guardar la pregunta, el resultado y tu reflexión.</p><a class="button primary" href="#consultar">Abrir una consulta</a></section>`}</div><dialog id="delete-dialog"><form method="dialog"><h2>Eliminar esta consulta</h2><p>Se eliminarán la tirada, su reflexión y sus relecturas${cloudConfigured?" de tu cuenta":" de este navegador"}.</p><div class="row"><button class="button" value="cancel">Cancelar</button><button class="button primary" value="delete">Eliminar</button></div></form></dialog>`;
 }
 function sources(){
  return heading("EDICIÓN Y MÉTODO","Fuentes y créditos","Consulta los textos en tres idiomas y revisa la pauta que decide qué pasajes se muestran.")+
@@ -310,11 +411,55 @@ main.addEventListener("change",event=>{
  if(id==="lower")builder=value+builder.slice(3);
  if(id==="upper"||id==="lower")redrawBuilder(`#${id}`);
 });
-main.addEventListener("click",event=>{
+main.addEventListener("submit",async event=>{
+ if(event.target.id!=="account-form")return;
+ event.preventDefault();
+ if(!cloud || account)return;
+ const form=event.target;
+ const submit=form.querySelector('button[type="submit"]');
+ if(submit.disabled)return;
+ submit.disabled=true;
+ const fields=new FormData(form);
+ const email=String(fields.get("email")).trim(),password=String(fields.get("password"));
+ const signup=accountMode==="signup";
+ try{
+  const url=new URL(location.href);
+  url.hash="";url.search="";
+  const {data,error}=signup
+   ?await cloud.auth.signUp({email,password,options:{emailRedirectTo:url.href}})
+   :await cloud.auth.signInWithPassword({email,password});
+  if(error) {
+   status(error.code==="email_not_confirmed"?"Confirma tu correo antes de iniciar sesión.":signup?"No se pudo crear la cuenta. Revisa el correo y la contraseña.":"No se pudo iniciar sesión. Revisa el correo y la contraseña.");
+  }else if(!data.session){
+   form.reset();
+   status("Revisa tu correo para confirmar la cuenta.");
+  }
+ }catch{status("No se pudo contactar al servicio de cuentas. Vuelve a intentarlo.");}
+ finally{submit.disabled=false;}
+});
+main.addEventListener("click",async event=>{
  const button=event.target.closest("[data-act]");
  if(!button)return;
  const [act,arg]=button.dataset.act.split(":");
  switch(act){
+  case "auth-mode":accountMode=arg;break;
+  case "sign-out":{
+   const {error}=await cloud.auth.signOut({scope:"local"});
+   if(error)status("No se pudo cerrar la sesión. Vuelve a intentarlo.");
+   return;
+  }
+  case "reload-journal":if(!journalBusy)await refreshJournal();return;
+  case "import-journal":{
+   if(!confirm("¿Copiar las consultas de este navegador a tu cuenta? Las entradas que ya existan en tu cuenta se conservan."))return;
+   await journalOperation(button,async (userId,isCurrent)=>{
+    await cloud.importLocal(userId,localEntries);
+    if(!isCurrent())return;
+    importedLocally.add(userId);
+    await refreshJournal();
+    if(isCurrent()&&journalReady)status("Consultas importadas.");
+   });
+   return;
+  }
   case "method":
    if(arg!==method && (!values.length||confirm("Cambiar el método reiniciará las líneas registradas. ¿Continuar?"))){method=arg;input=arg==="coins"?"coins":"values";restart();}
    break;
@@ -344,26 +489,53 @@ main.addEventListener("click",event=>{
    redrawBuilder(`[data-act="flip:${i}"]`);return;
   }
   case "save":{
+   if(values.length!==6)return;
    const existing=journal.find(entry=>entry.id===activeId);
    const followUps=[...(existing?.followUps??[])];
    if(existing&&followUp.trim())followUps.push({date:new Date().toISOString(),text:followUp.trim()});
    const item={id:existing?.id||crypto.randomUUID(),date:existing?.date||new Date().toISOString(),values:[...values],question,method,reflection,language,readingMode,topic:topic.trim(),context,followUps};
-   const updated=existing?journal.map(entry=>entry.id===item.id?item:entry):[item,...journal];
-   if(writeJournal(updated)){activeId=item.id;followUp="";show();status("Consulta guardada en el diario.");main.querySelector('[data-act="save"]')?.focus({preventScroll:true});}
+   const withEntry=entry=>existing?journal.map(row=>row.id===entry.id?entry:row):[entry,...journal];
+   const onSaved=()=>{
+    if(route()[0]!=="resultado")return;
+    activeId=item.id;followUp="";show();status("Consulta guardada en el diario.");
+    main.querySelector('[data-act="save"]')?.focus({preventScroll:true});
+   };
+   if(cloudConfigured){
+    const originalValues=values;
+    await journalOperation(button,async (userId,isCurrent)=>{
+     const entry=await cloud.save(userId,item,existing);
+     if(!isCurrent())return;
+     journal=withEntry(entry);
+     if(originalValues===values && values.length===6 && values.every((value,index)=>value===item.values[index]))onSaved();
+     if(route()[0]==="diario")show();
+    });
+   }else if(writeJournal(withEntry(item)))onSaved();
    return;
   }
   case "open":{
    const item=journal.find(entry=>entry.id===arg);
    if(!item)return;
-   values=[...item.values];question=item.question;method=item.method;input="values";activeId=item.id;reflection=item.reflection??"";language=item.language??"es";readingMode=item.readingMode??"guided";
+   values=[...item.values];question=item.question;method=item.method;input="values";activeId=item.id;reflection=item.reflection??"";language=Object.hasOwn(labels,item.language)?item.language:"es";readingMode=item.readingMode==="all"?"all":"guided";
    topic=item.topic??"";context=item.context??"";followUp="";
    location.hash="resultado";return;
   }
   case "delete":{
    const dialog=document.querySelector("#delete-dialog");
    dialog.returnValue="cancel";
-   dialog.addEventListener("close",()=>{
-    if(dialog.returnValue==="delete"&&writeJournal(journal.filter(item=>item.id!==arg))){if(activeId===arg)activeId=null;show();main.focus({preventScroll:true});}
+   const item=journal.find(entry=>entry.id===arg);
+   dialog.addEventListener("close",async ()=>{
+    if(dialog.returnValue!=="delete" || !item)return;
+    const withoutEntry=()=>journal.filter(row=>row.id!==arg);
+    const onDeleted=()=>{
+     if(activeId===arg)activeId=null;
+     if(route()[0]==="diario"){show();main.focus({preventScroll:true});}
+    };
+    if(cloudConfigured){
+     await journalOperation(button,async (userId,isCurrent)=>{
+      await cloud.remove(userId,item);
+      if(isCurrent()){journal=withoutEntry();onDeleted();}
+     });
+    }else if(writeJournal(withoutEntry()))onDeleted();
    },{once:true});
    dialog.showModal();return;
   }
@@ -374,3 +546,4 @@ main.addEventListener("click",event=>{
 });
 window.addEventListener("hashchange",()=>{if(location.hash!=="#contenido")show(true);});
 show(location.hash.startsWith("#aprender/"));
+if(cloudConfigured) void startAccount();
