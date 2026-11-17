@@ -29,6 +29,16 @@ export function calculate(values) {
  const final = Array.from(initial,(bit,i)=>changes.includes(i+1)?1-Number(bit):bit).join("");
  return {initial:figureNumber(initial),final:figureNumber(final),changes};
 }
+export function valuesFromFigure(initial, changes) {
+ const bits = figures[initial-1];
+ if (!Number.isInteger(initial) || !bits || changes.some(i => !Number.isInteger(i) || i < 1 || i > 6)) {
+  throw new Error("Elige un hexagrama inicial y líneas del 1 al 6.");
+ }
+ return Array.from(bits, (bit, i) => {
+  const changing = changes.includes(i+1);
+  return bit === "1" ? (changing ? 9 : 7) : (changing ? 6 : 8);
+ });
+}
 export function choosePassages(result, mode) {
  const {initial,final,changes}=result;
  const unchanged=[1,2,3,4,5,6].filter(i=>!changes.includes(i));

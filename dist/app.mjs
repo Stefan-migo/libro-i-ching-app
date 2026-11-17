@@ -2,7 +2,7 @@ import {cloudConfigured,connectJournal} from "./cloud-journal.mjs";
 import {hexagramReadings} from "./hexagram-readings.mjs";
 import {practiceGuide,yarrowInstructions} from "./practice-guide.mjs";
 import {illustrationDescriptions} from "./illustrations.mjs";
-import {figures,trigrams,trigramOrder,states,figureNumber,calculate,choosePassages,simulatedYarrow} from "./engine.mjs";
+import {figures,trigrams,trigramOrder,states,figureNumber,calculate,choosePassages,simulatedYarrow,valuesFromFigure} from "./engine.mjs";
 
 const main=document.querySelector("main");
 if(cloudConfigured)document.getElementById("account-nav").hidden=false;
@@ -21,14 +21,18 @@ catch {storageAvailable=false;}
 const localEntries=journal;
 if(cloudConfigured)journal=[];
 let question="", method="coins", input="coins", values=[], coins=[false,false,false], coinTouched=[false,false,false], reflection="", activeId=null;
-let topic="", context="", followUp="";
+let topic="", context="", followUp="", consultedOn="";
+let externalDraft=null;
 let language="es", readingMode="guided", builder="111000";
 const methods={coins:"Tres monedas",yarrow:"Milenrama"};
+const externalLabel="Consulta externa";
+const methodLabel=method=>method==="external"?externalLabel:methods[method];
 const countPattern=/^[1-9][0-9]?$/;
 const html=value=>String(value??"").replace(/[&<>"']/g,char=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[char]));
 const clean=text=>text.normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase();
 const number=id=>String(id).padStart(2,"0");
 const diaryDate=date=>new Date(date).toLocaleDateString("es",{dateStyle:"long"});
+const consultationDate=item=>item.consultedOn?diaryDate(item.consultedOn+"T12:00:00"):diaryDate(item.date);
 const heading=(section,title,description)=>`<header class="page-head"><p class="eyebrow">${section}</p><h1 class="page-title">${title}</h1><p>${description}</p></header>`;
 const action=(label,click,extra="")=>`<button type="button" class="button ${extra}" data-act="${click}">${label}</button>`;
 const toggle=(label,click,selected)=>`<button type="button" class="button" data-act="${click}" aria-pressed="${selected}">${label}</button>`;
@@ -192,7 +196,7 @@ async function syncAccount(user){
  journalReady=false;
  journalLoading=false;
  journalMessage="";
- if(previous){restart();question="";topic="";context="";}
+ if(previous){restart();externalDraft=null;question="";topic="";context="";}
  if(route()[0]==="cuenta" && account) location.hash=values.length===6?"resultado":"diario";
  else if(previous && route()[0]==="resultado") location.hash="diario";
  else show();
@@ -235,14 +239,24 @@ function route() {return (location.hash.slice(1)||"inicio").split("/");}
 function show(reFocus=false) {
  const [page,id]=route();
  for(const nav of document.querySelectorAll(".top nav a")) {
-  const active=nav.hash===`#${page}`||(page==="hex"&&nav.hash==="#explorar")||(page==="resultado"&&nav.hash==="#consultar");
+  const active=nav.hash===`#${page}`||(page==="hex"&&nav.hash==="#explorar")||(page==="resultado"&&method!=="external"&&nav.hash==="#consultar")||(page==="resultado"&&method==="external"&&nav.hash==="#diario");
   if(active)nav.setAttribute("aria-current","page");else nav.removeAttribute("aria-current");
  }
  if(!book) {main.innerHTML=heading("I CHING","El libro de los cambios","El texto no pudo cargarse. Vuelve a abrir la página para intentarlo de nuevo.");return;}
- const pages={consultar:consult, resultado:reading, explorar:explore, aprender:learn, diario:diary, cuenta:accountPage, fuentes:sources, hex:()=>hexDetail(countPattern.test(id)?Number(id):0)};
+ const pages={consultar:consult, resultado:reading, explorar:explore, aprender:learn, diario:()=>id==="registrar"?externalPage():diary(), instalar:installPage, cuenta:accountPage, fuentes:sources, hex:()=>hexDetail(countPattern.test(id)?Number(id):0)};
  if(Object.hasOwn(pages,page)) main.innerHTML=pages[page]();
  else main.replaceChildren(document.querySelector("#landing").content.cloneNode(true));
  if(page==="explorar")filterGrid("");
+ if(page==="diario"&&id==="registrar"){
+  const form=main.querySelector("#external-form");
+  if(form&&externalDraft){
+   form.elements.initial.value=externalDraft.initial;
+   form.elements.expected.value=externalDraft.expected;
+   for(const line of form.querySelectorAll('[name="lines"]'))line.checked=externalDraft.lines.includes(Number(line.value));
+  }
+  updateExternalPreview(form);
+ }
+ if(page==="instalar")document.dispatchEvent(new Event("render-install-page"));
  if(reFocus){
   const guideSection=page==="aprender"&&["preguntas","diario","metodos","figuras"].includes(id)?document.getElementById(id):null;
   if(guideSection){guideSection.focus({preventScroll:true});guideSection.scrollIntoView(); }
@@ -250,6 +264,7 @@ function show(reFocus=false) {
  }
 }
 function consult() {
+ if(method==="external"){restart();question="";topic="";context="";}
  const step=values.length+1, total=6+coins.filter(Boolean).length;
  const track=Array.from({length:6},(_,i)=>[i+1,values[i]]).map(([i,v])=>`<div><strong class="level">${i} ${v?`· ${v}`:""}</strong><span>${v?states[v]:"Pendiente"}</span></div>`).reverse().join("");
  const coinsControl=`<p>Pulsa cada moneda hasta que muestre el lado que salió. Cara vale 3 y cruz vale 2.</p><div class="coins">${coins.map((face,i)=>`<button type="button" class="coin" data-act="coin:${i}" aria-pressed="${face}" aria-label="Moneda ${i+1}: ${!coinTouched[i]?"sin registrar":face?"cara":"cruz"}">${!coinTouched[i]?"?":face?"Cara":"Cruz"}<small>${!coinTouched[i]?`Moneda ${i+1}`:face?"3":"2"}</small></button>`).join("")}</div><div class="row">${action(coinTouched.every(Boolean)?`Registrar ${total} · ${states[total]}`:"Registrar las tres monedas","confirm-coins","primary").replace("data-act",coinTouched.every(Boolean)?"data-act":"disabled data-act")}<button class="button" data-act="all-tails">Tres cruces</button></div>`;
@@ -285,7 +300,7 @@ function reading(){
   "Con cinco cambios, lee en el hexagrama resultante la única posición que quedó estable.",
   result.initial<=2?"En los hexagramas 1 y 2, cuando cambian las seis líneas, se consulta el pasaje especial.":"Con seis cambios, lee el dictamen del hexagrama resultante."
  ];
- return heading("LECTURA","Tu consulta",`${methods[method]} · ${result.changes.length?result.changes.length===1?"Cambia la línea "+result.changes[0]:"Cambian las líneas "+result.changes.join(", "):"Sin líneas cambiantes"}`)+
+ return heading("LECTURA","Tu consulta",`${methodLabel(method)} · ${result.changes.length?result.changes.length===1?"Cambia la línea "+result.changes[0]:"Cambian las líneas "+result.changes.join(", "):"Sin líneas cambiantes"}`)+
  `<div class="flow">${question?`<div class="panel"><p class="eyebrow">TU PREGUNTA</p><p style="white-space:pre-wrap;overflow-wrap:anywhere">${html(question)}</p></div>`:""}
  <div class="reader-grid">${figureCard(result.initial,"INICIAL",result.changes)}${result.changes.length?figureCard(result.final,"RESULTANTE"):""}</div>
  <section class="panel"><h2>Qué leer</h2><div class="choose">${toggle("Lectura guiada","read:guided",readingMode==="guided")}${toggle("Todas las líneas cambiantes","read:all",readingMode==="all")}</div>
@@ -293,12 +308,12 @@ function reading(){
  ${editionChoices()}${choosePassages(result,readingMode).map(ref=>passage(ref)).join("")}
  <a class="caption-link" href="#fuentes">Sobre la edición y la regla de lectura</a></section>
  <section class="panel" aria-labelledby="reading-journal"><h2 id="reading-journal">Registrar en el diario</h2>
- <p class="muted">La tirada y sus líneas se guardan con la fecha y el método. Puedes guardar la consulta aunque todavía no tengas una reflexión.</p>
+ <p class="muted">${method==="external"&&consultedOn?"Fecha de consulta · "+consultationDate({consultedOn})+". ":""}Puedes guardar la consulta aunque todavía no tengas una reflexión.</p>
  <label class="field">Tema <small>Opcional. Por ejemplo, obra, trabajo o vínculos.</small><input id="topic" maxlength="80" value="${html(topic)}"></label>
  <label class="field">Contexto <small>¿Qué estaba pasando al momento de consultar?</small><textarea id="context" maxlength="1600">${html(context)}</textarea></label>
  <label class="field">Primera reflexión <small>¿Qué pasaje te llamó la atención? ¿Qué quedó abierto?</small><textarea id="reflection" maxlength="4600">${html(reflection)}</textarea></label>
  ${saved?`<h3>Relecturas</h3>${followUps.length?`<ul class="journal-followups">${followUps.map(note=>`<li><time datetime="${html(note.date)}">${diaryDate(note.date)}</time><p>${html(note.text)}</p></li>`).join("")}</ul>`:`<p class="fine">Todavía no hay relecturas.</p>`}<label class="field">Añadir una relectura <small>Al actualizar la entrada, esta nota se guarda con la fecha de hoy.</small><textarea id="follow-up" maxlength="2400" placeholder="¿Qué ocurrió desde la consulta? ¿Cómo la lees ahora?">${html(followUp)}</textarea></label>`:""}
- <div class="actions">${saveControl} ${saved?`<a class="button" href="#diario">Ver mi diario</a>`:`<a class="button" href="#consultar">Volver a la tirada</a>`} ${action("Nueva consulta","new")}</div>
+ <div class="actions">${saveControl} ${saved?`<a class="button" href="#diario">Ver mi diario</a>`:method==="external"?`<a class="button" href="#diario/registrar">Editar resultado</a>`:`<a class="button" href="#consultar">Volver a la tirada</a>`} ${action("Nueva consulta","new")}</div>
  <p class="toast" role="status"></p></section></div>`;
 }
 function gridTile(entry){
@@ -352,14 +367,82 @@ function learn(){
  <table><thead><tr><th>Valor</th><th>Línea inicial</th><th>En el resultado</th><th>Monedas</th><th>Varillas*</th></tr></thead><tbody><tr><th>6</th><td>Yin cambiante</td><td>Yang</td><td>1/8</td><td>1/16</td></tr><tr><th>7</th><td>Yang estable</td><td>Yang</td><td>3/8</td><td>5/16</td></tr><tr><th>8</th><td>Yin estable</td><td>Yin</td><td>3/8</td><td>7/16</td></tr><tr><th>9</th><td>Yang cambiante</td><td>Yin</td><td>1/8</td><td>3/16</td></tr></tbody></table>
  <p class="fine">*Modelo convencional de la simulación de milenrama. El gesto de dividir varillas físicas puede producir diferencias.</p><a class="button primary" href="#consultar">Probar una tirada ↗</a></section></div>`;
 }
+function externalPage(){
+ if(!account || !journalReady || journalLoading)return diary();
+ const draft=externalDraft;
+ const options=book.map(row=>`<option value="${row.id}">${number(row.id)} · ${html(row.name)}</option>`).join("");
+ const figureSelect=(name,label,placeholder,required=false)=>`<label class="field">${label}
+  <select name="${name}" ${required?"required":""}><option value="">${placeholder}</option>${options}</select></label>`;
+ return heading("DIARIO","Registrar consulta externa","Introduce el resultado de una tirada hecha fuera de la app y abre su lectura.")+
+ `<form id="external-form" class="panel external-form">
+ ${figureSelect("initial","Hexagrama inicial","Elige un hexagrama",true)}
+ <fieldset class="external-lines"><legend>Líneas cambiantes</legend><p class="fine">La línea 1 es la de abajo y la 6 la de arriba. Si no hubo cambios, deja todas sin marcar.</p>
+ <div class="external-line-options">${[1,2,3,4,5,6].map(line=>`<label><input type="checkbox" name="lines" value="${line}"> ${line}</label>`).join("")}</div></fieldset>
+ ${figureSelect("expected","Hexagrama resultante anotado (opcional)","Calcular con las líneas marcadas")}
+ <p id="external-preview" class="muted" aria-live="polite"></p>
+ <label class="field">Fecha de la consulta (opcional)<input type="date" name="consultedOn" value="${html(draft?.consultedOn)}"></label>
+ <label class="field">Pregunta (opcional)<textarea name="question" maxlength="1200">${html(draft?.question)}</textarea></label>
+ <div class="actions"><button class="button primary" type="submit">Ver lectura</button><a class="button" href="#diario">Volver al diario</a></div>
+ </form>`;
+}
+
+function externalResult(form){
+ const fields=new FormData(form);
+ const initial=Number(fields.get("initial"));
+ const changes=fields.getAll("lines").map(Number);
+ return initial?calculate(valuesFromFigure(initial,changes)):null;
+}
+
+function updateExternalPreview(form){
+ if(!form)return;
+ const result=externalResult(form);
+ const expected=form.elements.expected;
+ const preview=form.querySelector("#external-preview");
+ expected.setCustomValidity("");
+ if(!result){preview.textContent="";return;}
+ if(expected.value && (!result.changes.length || Number(expected.value)!==result.final)){
+  expected.setCustomValidity("El hexagrama anotado no coincide. Revisa las líneas cambiantes o el hexagrama resultante.");
+  preview.textContent=expected.validationMessage;
+  return;
+ }
+ preview.textContent=result.changes.length
+  ?`Resultante calculado: ${number(result.final)} · ${hexName(result.final)}.`
+  :"Sin cambios. La lectura se queda en el hexagrama inicial.";
+}
+
+function openExternalReading(form){
+ if(!account || !journalReady || journalLoading)return;
+ const fields=new FormData(form);
+ const initial=Number(fields.get("initial"));
+ const lines=fields.getAll("lines").map(Number);
+ const expected=fields.get("expected");
+ const date=fields.get("consultedOn");
+ const draftQuestion=fields.get("question");
+ const editing=method==="external"&&activeId===null;
+ if(!editing){restart();topic="";context="";}
+ externalDraft={initial,lines,expected,consultedOn:date,question:draftQuestion};
+ values=valuesFromFigure(initial,lines);
+ method="external";consultedOn=date;question=draftQuestion;
+ location.hash="resultado";
+}
+
+function installPage(){
+ return heading("APLICACIÓN","Instalar I Ching","Abre el libro desde un icono en la pantalla de inicio.")+
+ `<section class="panel"><button type="button" class="button primary" id="install-app" hidden>Instalar aplicación</button>
+ <p class="fine" id="install-status" role="status"></p>
+ <h2>En el teléfono</h2>
+ <p><strong>iPhone o iPad.</strong> Abre esta página en Safari. En Compartir, elige «Agregar a pantalla de inicio» y activa «Abrir como app web» si aparece.</p>
+ <p><strong>Android.</strong> En Chrome, abre el menú y elige «Instalar aplicación» o «Añadir a pantalla de inicio».</p>
+ </section>`;
+}
 function diary(){
  if(cloudConfigured && !account) return heading("DIARIO","Tus consultas","Inicia sesión para acceder a tu diario personal.")+'<a class="button primary" href="#cuenta">Ir a mi cuenta</a>';
  const list=journal.map(item=>{
   const result=calculate(item.values);
-  return `<article class="journal-item"><p class="eyebrow">${diaryDate(item.date)} · ${methods[item.method]}${item.topic?` · ${html(item.topic)}`:""}</p><h3>${html(item.question||"Consulta sin pregunta")}</h3><div>${hexLink(result.initial,null)}${result.changes.length?` → ${hexLink(result.final,null)}`:""}</div>${item.reflection?`<p>${html(item.reflection)}</p>`:""}${item.followUps?.length?`<span class="fine">Relecturas: ${item.followUps.length}</span>`:""}<div class="actions">${action("Abrir lectura",`open:${item.id}`,"primary")}${action("Eliminar",`delete:${item.id}`)}</div></article>`;
+  return `<article class="journal-item"><p class="eyebrow">${consultationDate(item)} · ${methodLabel(item.method)}${item.topic?` · ${html(item.topic)}`:""}</p><h3>${html(item.question||"Consulta sin pregunta")}</h3><div>${hexLink(result.initial,null)}${result.changes.length?` → ${hexLink(result.final,null)}`:""}</div>${item.reflection?`<p>${html(item.reflection)}</p>`:""}${item.followUps?.length?`<span class="fine">Relecturas: ${item.followUps.length}</span>`:""}<div class="actions">${action("Abrir lectura",`open:${item.id}`,"primary")}${action("Eliminar",`delete:${item.id}`)}</div></article>`;
  });
  const intro=cloudConfigured?"Las consultas se guardan en tu cuenta. Puedes añadir una relectura fechada.":"Guarda tus consultas en este navegador. Puedes añadir una relectura fechada.";
- const cloudTools=cloudConfigured?`<div class="actions"><a class="button" href="#cuenta">Mi cuenta</a>${!journalLoading?action("Recargar diario","reload-journal"):""}${journalReady&&!journalLoading&&localEntries.length&&!importedLocally.has(account.id)?action("Importar consultas de este navegador","import-journal"):""}</div><p class="toast" role="status">${html(journalLoading?"Cargando tus consultas…":journalMessage)}</p>`:"";
+ const cloudTools=cloudConfigured?`<div class="actions">${journalReady&&!journalLoading?`<a class="button primary" href="#diario/registrar">Registrar consulta externa</a>`:""}<a class="button" href="#cuenta">Mi cuenta</a>${!journalLoading?action("Recargar diario","reload-journal"):""}${journalReady&&!journalLoading&&localEntries.length&&!importedLocally.has(account.id)?action("Importar consultas de este navegador","import-journal"):""}</div><p class="toast" role="status">${html(journalLoading?"Cargando tus consultas…":journalMessage)}</p>`:"";
  return heading("DIARIO","Tus consultas",intro)+
  `<div class="flow">${cloudTools}<p class="fine"><a href="#aprender/diario">Cómo llevar y releer tu diario</a></p>${!cloudConfigured&&!storageAvailable?`<p class="toast">Este navegador no permite usar el almacenamiento local.</p>`:""}${journalLoading||!journalReady?"":list.length?list.join(""):`<section class="panel empty-state"><h2>Aún no hay consultas</h2><p class="muted">Luego de una tirada, puedes guardar la pregunta, el resultado y tu reflexión.</p><a class="button primary" href="#consultar">Abrir una consulta</a></section>`}</div><dialog id="delete-dialog"><form method="dialog"><h2>Eliminar esta consulta</h2><p>Se eliminarán la tirada, su reflexión y sus relecturas${cloudConfigured?" de tu cuenta":" de este navegador"}.</p><div class="row"><button class="button" value="cancel">Cancelar</button><button class="button primary" value="delete">Eliminar</button></div></form></dialog>`;
 }
@@ -378,7 +461,9 @@ function clearCoin(){
  coinTouched=[false,false,false];
 }
 function restart() {
- values=[];reflection="";followUp="";activeId=null;clearCoin();
+ values=[];reflection="";followUp="";activeId=null;consultedOn="";
+ if(method==="external"){method="coins";input="coins";}
+ clearCoin();
 }
 function onAdd(value,detail="") {
  if(values.length===6)return;
@@ -410,8 +495,14 @@ main.addEventListener("change",event=>{
  if(id==="upper")builder=builder.slice(0,3)+value;
  if(id==="lower")builder=value+builder.slice(3);
  if(id==="upper"||id==="lower")redrawBuilder(`#${id}`);
+ if(event.target.form?.id==="external-form")updateExternalPreview(event.target.form);
 });
 main.addEventListener("submit",async event=>{
+ if(event.target.id==="external-form"){
+  event.preventDefault();
+  openExternalReading(event.target);
+  return;
+ }
  if(event.target.id!=="account-form")return;
  event.preventDefault();
  if(!cloud || account)return;
@@ -493,11 +584,11 @@ main.addEventListener("click",async event=>{
    const existing=journal.find(entry=>entry.id===activeId);
    const followUps=[...(existing?.followUps??[])];
    if(existing&&followUp.trim())followUps.push({date:new Date().toISOString(),text:followUp.trim()});
-   const item={id:existing?.id||crypto.randomUUID(),date:existing?.date||new Date().toISOString(),values:[...values],question,method,reflection,language,readingMode,topic:topic.trim(),context,followUps};
+   const item={id:existing?.id||crypto.randomUUID(),date:existing?.date||new Date().toISOString(),values:[...values],question,method,reflection,language,readingMode,topic:topic.trim(),context,followUps,...(consultedOn?{consultedOn}:{})};
    const withEntry=entry=>existing?journal.map(row=>row.id===entry.id?entry:row):[entry,...journal];
    const onSaved=()=>{
     if(route()[0]!=="resultado")return;
-    activeId=item.id;followUp="";show();status("Consulta guardada en el diario.");
+    activeId=item.id;followUp="";if(item.method==="external")externalDraft=null;show();status("Consulta guardada en el diario.");
     main.querySelector('[data-act="save"]')?.focus({preventScroll:true});
    };
    if(cloudConfigured){
@@ -516,7 +607,7 @@ main.addEventListener("click",async event=>{
    const item=journal.find(entry=>entry.id===arg);
    if(!item)return;
    values=[...item.values];question=item.question;method=item.method;input="values";activeId=item.id;reflection=item.reflection??"";language=Object.hasOwn(labels,item.language)?item.language:"es";readingMode=item.readingMode==="all"?"all":"guided";
-   topic=item.topic??"";context=item.context??"";followUp="";
+   topic=item.topic??"";context=item.context??"";followUp="";consultedOn=item.consultedOn??"";
    location.hash="resultado";return;
   }
   case "delete":{

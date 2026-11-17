@@ -2,10 +2,12 @@
 <html lang="es">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#f6f2e8">
 <meta name="description" content="Consulta el I Ching con monedas o milenrama y explora el Libro de los Cambios.">
 <title>I Ching · El libro de los cambios</title>
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="apple-touch-icon" href="./icons/icon-180.png">
 <link rel="icon" href="./mark.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -20,7 +22,7 @@
 <nav aria-label="Navegación principal"><a href="#consultar">Consultar</a><a href="#explorar">Hexagramas</a><a href="#aprender">Aprender</a><a href="#diario">Diario</a><a href="#cuenta" id="account-nav" hidden>Cuenta</a></nav>
 </div></header>
 <main class="shell" id="contenido" tabindex="-1"></main>
-<footer class="shell footer"><span>周易 &nbsp; I Ching</span><a href="#fuentes">Textos, método y créditos</a></footer>
+<footer class="shell footer"><span>周易 &nbsp; I Ching</span><div class="footer-links"><a href="#instalar">Instalar app</a><a href="#fuentes">Textos, método y créditos</a></div></footer>
 <template id="landing">
 <section class="hero">
   <div class="hero-copy"><p class="eyebrow"><span></span> YÌ JĪNG · 周易</p>
@@ -35,5 +37,6 @@
 <a class="entry" href="#aprender"><span class="entry-icon" aria-hidden="true">◒</span><span class="arrow" aria-hidden="true">↗</span><h3>Aprender el I Ching</h3><p>Formula preguntas, practica con monedas o milenrama y lleva un diario de consultas.</p></a></div></section>
 </template>
 <noscript>Activa JavaScript para calcular y explorar los hexagramas.</noscript>
+<script type="module" src="./pwa.mjs"></script>
 <script type="module" src="./app.mjs"></script>
 </body></html>
