@@ -20,10 +20,13 @@ try {
 catch {storageAvailable=false;}
 const localEntries=journal;
 if(cloudConfigured)journal=[];
-let question="", method="coins", input="coins", values=[], coins=[false,false,false], coinTouched=[false,false,false], reflection="", activeId=null;
-let topic="", context="", followUp="", consultedOn="";
+function newReading(method="coins"){
+ return {method,values:[],question:"",reflection:"",activeId:null,topic:"",context:"",followUp:"",consultedOn:"",readingMode:"guided",language:null};
+}
+let casting=newReading(), diaryReading=null;
+let input="coins", coins=[false,false,false], coinTouched=[false,false,false];
 let externalDraft=null;
-let language="es", readingMode="guided", builder="111000";
+let language="es", builder="111000";
 const methods={coins:"Tres monedas",yarrow:"Milenrama"};
 const externalLabel="Consulta externa";
 const methodLabel=method=>method==="external"?externalLabel:methods[method];
@@ -134,15 +137,15 @@ const genderNotes={
  "44:judgment":"El matrimonio es la imagen histórica del pasaje. En la lectura contemporánea, puede servir para pensar qué lugar dar a un encuentro intenso.",
  "54:judgment":"El matrimonio en una posición subordinada es una imagen del orden social antiguo. Permite pensar en los márgenes de acción dentro de un acuerdo desigual."
 };
-function passage(ref, linkFigure = true) {
+function passage(ref, linkFigure = true, edition = language) {
  const row=book[ref.id-1];
- const texts=row[language==="zh"?"zh_text":language]||row.en;
+ const texts=row[edition==="zh"?"zh_text":edition]||row.en;
  const label=ref.kind==="line"?`Línea ${ref.index}`:ref.kind==="special"?(ref.id===1?"Uso de los nueves":"Uso de los seises"):ref.kind==="image"?"Imagen":"Dictamen";
- const note=language==="es"&&genderNotes[`${ref.id}:${ref.kind==="line"?ref.index:ref.kind}`];
+ const note=edition==="es"&&genderNotes[`${ref.id}:${ref.kind==="line"?ref.index:ref.kind}`];
  const quote=(ref.kind==="line"?texts.lines[ref.index-1]:texts[ref.kind])||row.en[ref.kind];
  return `<article class="passage"><strong>${label}${linkFigure ? ` · ${hexLink(ref.id,null)}` : ""}</strong>${ref.main?`<span class="tag">Prioridad</span>`:""}<p class="quote" lang="${language}">${html(quote)}</p>${note?`<p class="fine"><strong>Contexto histórico.</strong> ${note}</p>`:""}</article>`;
 }
-function editionChoices() {return `<div class="choose" aria-label="Idioma del texto">${Object.entries(labels).map(([id,label])=>toggle(label,`lang:${id}`,language===id)).join("")}</div>`;}
+function editionChoices(edition=language) {return `<div class="choose" aria-label="Idioma del texto">${Object.entries(labels).map(([id,label])=>toggle(label,`lang:${id}`,edition===id)).join("")}</div>`;}
 function status(message){const el=document.querySelector("[role=status]");if(el)el.textContent=message;}
 
 let cloud=null, account=null, accountMode="login", journalMessage="";
@@ -196,8 +199,8 @@ async function syncAccount(user){
  journalReady=false;
  journalLoading=false;
  journalMessage="";
- if(previous){restart();externalDraft=null;question="";topic="";context="";}
- if(route()[0]==="cuenta" && account) location.hash=values.length===6?"resultado":"diario";
+ if(previous){casting=newReading();diaryReading=null;externalDraft=null;input="coins";clearCoin();}
+ if(route()[0]==="cuenta" && account) location.hash=casting.values.length===6?"resultado":"diario";
  else if(previous && route()[0]==="resultado") location.hash="diario";
  else show();
  if(account) await refreshJournal();
@@ -236,15 +239,21 @@ async function journalOperation(button, operation){
 }
 
 function route() {return (location.hash.slice(1)||"inicio").split("/");}
+function currentReading(){
+ const [page,section]=route();
+ if(page==="resultado")return casting;
+ if(page==="diario"&&section==="lectura")return diaryReading;
+ return null;
+}
 function show(reFocus=false) {
  const [page,id]=route();
  main.dataset.page=page;
  for(const nav of document.querySelectorAll(".top nav a")) {
-  const active=nav.hash===`#${page}`||(page==="hex"&&nav.hash==="#explorar")||(page==="resultado"&&method!=="external"&&nav.hash==="#consultar")||(page==="resultado"&&method==="external"&&nav.hash==="#diario");
+  const active=nav.hash===`#${page}`||(page==="hex"&&nav.hash==="#explorar")||(page==="resultado"&&nav.hash==="#consultar");
   if(active)nav.setAttribute("aria-current","page");else nav.removeAttribute("aria-current");
  }
  if(!book) {main.innerHTML=heading("I CHING","El libro de los cambios","El texto no pudo cargarse. Vuelve a abrir la página para intentarlo de nuevo.");return;}
- const pages={consultar:consult, resultado:reading, explorar:explore, aprender:learn, diario:()=>id==="registrar"?externalPage():diary(), instalar:installPage, cuenta:accountPage, fuentes:sources, hex:()=>hexDetail(countPattern.test(id)?Number(id):0)};
+ const pages={consultar:consult, resultado:()=>reading(casting), explorar:explore, aprender:learn, diario:()=>id==="registrar"?externalPage():id==="lectura"&&diaryReading?reading(diaryReading):diary(), instalar:installPage, cuenta:accountPage, fuentes:sources, hex:()=>hexDetail(countPattern.test(id)?Number(id):0)};
  if(Object.hasOwn(pages,page)) main.innerHTML=pages[page]();
  else main.replaceChildren(document.querySelector("#landing").content.cloneNode(true));
  if(page==="explorar")filterGrid("");
@@ -265,7 +274,7 @@ function show(reFocus=false) {
  }
 }
 function consult() {
- if(method==="external"){restart();question="";topic="";context="";}
+ const {method,values,question}=casting;
  const step=values.length+1, total=6+coins.filter(Boolean).length;
  const track=Array.from({length:6},(_,i)=>[i+1,values[i]]).map(([i,v])=>`<div><strong class="level">${i} ${v?`· ${v}`:""}</strong><span>${v?states[v]:"Pendiente"}</span></div>`).reverse().join("");
  const coinsControl=`<p>Pulsa cada moneda hasta que muestre el lado que salió. Cara vale 3 y cruz vale 2.</p><div class="coins">${coins.map((face,i)=>`<button type="button" class="coin" data-act="coin:${i}" aria-pressed="${face}" aria-label="Moneda ${i+1}: ${!coinTouched[i]?"sin registrar":face?"cara":"cruz"}">${!coinTouched[i]?"?":face?"Cara":"Cruz"}<small>${!coinTouched[i]?`Moneda ${i+1}`:face?"3":"2"}</small></button>`).join("")}</div><div class="row">${action(coinTouched.every(Boolean)?`Registrar ${total} · ${states[total]}`:"Registrar las tres monedas","confirm-coins","primary").replace("data-act",coinTouched.every(Boolean)?"data-act":"disabled data-act")}<button class="button" data-act="all-tails">Tres cruces</button></div>`;
@@ -279,12 +288,14 @@ function consult() {
  <strong>Cómo registrar la tirada</strong><div class="choose">${method==="coins"?toggle("Registrar monedas","input:coins",input==="coins"):""}${toggle("Introducir valores","input:values",input==="values")}${toggle("Simular","input:sim",input==="sim")}</div>
  </section><section class="panel casting-panel"><progress class="cast-progress" max="6" value="${values.length}" aria-label="Líneas registradas"></progress><p class="eyebrow">${step<=6?`LÍNEA ${step} DE 6`:"TIRADA COMPLETA"}</p><h2>${step<=6?(step===1?"La línea de abajo":step===6?"La línea de arriba":"Añade una línea"):"Tu hexagrama está listo"}</h2>
  ${step<=6?(input==="coins"?coinsControl:input==="values"?directControl:simControl):`<a href="#resultado" class="button primary">Leer el resultado ↗</a>`}
- <div class="choose">${values.length?action("Deshacer última línea","undo"):""}${values.length?action("Reiniciar tirada","reset"):""}</div>
+ <div class="choose">${values.length?action("Deshacer última línea","undo"):""}${step===7?action("Nueva consulta","new"):values.length?action("Reiniciar tirada","reset"):""}</div>
  <p class="toast" role="status"></p></section>
  ${method==="yarrow"?`<section class="panel"><details ${input==="values"?"open":""}><summary>Cómo usar 50 varillas físicas</summary>${yarrowInstructions}</details></section>`:""}</div>
  <aside class="panel dark"><p class="eyebrow">TU FIGURA</p><h2>${values.length} de 6 líneas</h2>${stack(Array.from({length:6},(_,i)=>values[i]?values[i]%2:"x").join(""),values.flatMap((v,i)=>v===6||v===9?[i+1]:[]))}<div class="track">${track}</div><p class="muted">La primera tirada va abajo. El color marca las líneas cambiantes.</p></aside></div>`;
 }
-function reading(){
+function reading(entry){
+ const {values,activeId,question,method,consultedOn,topic,context,reflection,followUp,readingMode}=entry;
+ const edition=entry.language??language;
  if(values.length!==6)return heading("CONSULTA","Tu lectura","Completa seis líneas para abrir los textos de tu consulta.")+`<a class="button primary" href="#consultar">Ir a la tirada</a>`;
  const result=calculate(values);
  const saved=journal.find(item=>item.id===activeId);
@@ -306,7 +317,7 @@ function reading(){
  <div class="reader-grid">${figureCard(result.initial,"INICIAL",result.changes)}${result.changes.length?figureCard(result.final,"RESULTANTE"):""}</div>
  <section class="panel"><h2>Qué leer</h2><div class="choose">${toggle("Lectura guiada","read:guided",readingMode==="guided")}${toggle("Todas las líneas cambiantes","read:all",readingMode==="all")}</div>
  <p class="muted">${readingMode==="guided"?guides[result.changes.length]:"Lee el dictamen inicial, las líneas que cambiaron y, si lo hay, el dictamen del hexagrama resultante."}</p>
- ${editionChoices()}${choosePassages(result,readingMode).map(ref=>passage(ref)).join("")}
+ ${editionChoices(edition)}${choosePassages(result,readingMode).map(ref=>passage(ref,true,edition)).join("")}
  <a class="caption-link" href="#fuentes">Sobre la edición y la regla de lectura</a></section>
  <section class="panel" aria-labelledby="reading-journal"><h2 id="reading-journal">Registrar en el diario</h2>
  <p class="muted">${method==="external"&&consultedOn?"Fecha de consulta · "+consultationDate({consultedOn})+". ":""}Puedes guardar la consulta aunque todavía no tengas una reflexión.</p>
@@ -421,12 +432,11 @@ function openExternalReading(form){
  const expected=fields.get("expected");
  const date=fields.get("consultedOn");
  const draftQuestion=fields.get("question");
- const editing=method==="external"&&activeId===null;
- if(!editing){restart();topic="";context="";}
+ if(diaryReading?.method!=="external"||diaryReading.activeId!==null)diaryReading=newReading("external");
  externalDraft={initial,lines,expected,consultedOn:date,question:draftQuestion};
- values=valuesFromFigure(initial,lines);
- method="external";consultedOn=date;question=draftQuestion;
- location.hash="resultado";
+ diaryReading.values=valuesFromFigure(initial,lines);
+ diaryReading.consultedOn=date;diaryReading.question=draftQuestion;
+ location.hash="diario/lectura";
 }
 
 function installPage(){
@@ -464,11 +474,12 @@ function clearCoin(){
  coinTouched=[false,false,false];
 }
 function restart() {
- values=[];reflection="";followUp="";activeId=null;consultedOn="";
- if(method==="external"){method="coins";input="coins";}
+ const {method,question,topic,context,language,readingMode}=casting;
+ casting={...newReading(method),question,topic,context,language,readingMode};
  clearCoin();
 }
 function onAdd(value,detail="") {
+ const {values}=casting;
  if(values.length===6)return;
  values.push(value);clearCoin();show();
  status(`Línea ${values.length} registrada · ${value} · ${states[value]}${detail}`);
@@ -486,11 +497,14 @@ function redrawBuilder(target){
 }
 main.addEventListener("input",event=>{
  const {id,value}=event.target;
- if(id==="question")question=value;
- if(id==="reflection")reflection=value;
- if(id==="topic")topic=value;
- if(id==="context")context=value;
- if(id==="follow-up")followUp=value;
+ if(id==="question")casting.question=value;
+ const entry=currentReading();
+ if(entry){
+  if(id==="reflection")entry.reflection=value;
+  if(id==="topic")entry.topic=value;
+  if(id==="context")entry.context=value;
+  if(id==="follow-up")entry.followUp=value;
+ }
  if(id==="search")filterGrid(value);
 });
 main.addEventListener("change",event=>{
@@ -555,7 +569,7 @@ main.addEventListener("click",async event=>{
    return;
   }
   case "method":
-   if(arg!==method && (!values.length||confirm("Cambiar el método reiniciará las líneas registradas. ¿Continuar?"))){method=arg;input=arg==="coins"?"coins":"values";restart();}
+   if(arg!==casting.method && (!casting.values.length||confirm("Cambiar el método reiniciará las líneas registradas. ¿Continuar?"))){casting.method=arg;input=arg==="coins"?"coins":"values";restart();}
    break;
   case "input":input=arg;clearCoin();break;
   case "coin":{
@@ -568,40 +582,54 @@ main.addEventListener("click",async event=>{
   case "random":{
    crypto.getRandomValues(pool);
    const faces=Array.from(pool,n=>n%2);
-   if(method==="coins")onAdd(6+faces.reduce((a,b)=>a+b,0),` · ${faces.map(face=>face?"Cara":"Cruz").join(", ")}`);
+   if(casting.method==="coins")onAdd(6+faces.reduce((a,b)=>a+b,0),` · ${faces.map(face=>face?"Cara":"Cruz").join(", ")}`);
    else onAdd(simulatedYarrow(pool[0]%16));
    return;
   }
-  case "new":restart();question="";topic="";context="";location.hash="consultar";return;
-  case "undo":values.pop();clearCoin();break;
+  case "new":{
+   restart();casting.question="";casting.topic="";casting.context="";
+   if(route()[0]==="consultar")show(true);else location.hash="consultar";
+   return;
+  }
+  case "undo":casting.values.pop();clearCoin();break;
   case "reset":if(confirm("¿Reiniciar las seis líneas?"))restart();break;
-  case "read":readingMode=arg;break;
-  case "lang":language=arg;break;
+  case "read":currentReading().readingMode=arg;break;
+  case "lang":{
+   const entry=currentReading();
+   if(entry)entry.language=arg;else language=arg;
+   break;
+  }
   case "flip":{
    const i=Number(arg);
    builder=builder.slice(0,i)+(builder[i]==="1"?"0":"1")+builder.slice(i+1);
    redrawBuilder(`[data-act="flip:${i}"]`);return;
   }
   case "save":{
-   if(values.length!==6)return;
+   const draft=currentReading();
+   if(!draft || draft.values.length!==6)return;
+   const {values,activeId,followUp,question,method,reflection,readingMode,topic,context,consultedOn}=draft;
    const existing=journal.find(entry=>entry.id===activeId);
    const followUps=[...(existing?.followUps??[])];
    if(existing&&followUp.trim())followUps.push({date:new Date().toISOString(),text:followUp.trim()});
-   const item={id:existing?.id||crypto.randomUUID(),date:existing?.date||new Date().toISOString(),values:[...values],question,method,reflection,language,readingMode,topic:topic.trim(),context,followUps,...(consultedOn?{consultedOn}:{})};
+   const item={id:existing?.id||crypto.randomUUID(),date:existing?.date||new Date().toISOString(),values:[...values],question,method,reflection,language:draft.language??language,readingMode,topic:topic.trim(),context,followUps,...(consultedOn?{consultedOn}:{})};
    const withEntry=entry=>existing?journal.map(row=>row.id===entry.id?entry:row):[entry,...journal];
    const onSaved=()=>{
-    if(route()[0]!=="resultado")return;
-    activeId=item.id;followUp="";if(item.method==="external")externalDraft=null;show();status("Consulta guardada en el diario.");
-    main.querySelector('[data-act="save"]')?.focus({preventScroll:true});
+    if((draft===casting||draft===diaryReading)&&values.length===6&&values.every((value,index)=>value===item.values[index])){
+     draft.activeId=item.id;
+     if(draft.followUp===followUp)draft.followUp="";
+     if(draft===diaryReading&&item.method==="external")externalDraft=null;
+    }
+    if(currentReading()===draft){
+     show();status("Consulta guardada en el diario.");
+     main.querySelector('[data-act="save"]')?.focus({preventScroll:true});
+    }else if(location.hash==="#diario")show();
    };
    if(cloudConfigured){
-    const originalValues=values;
     await journalOperation(button,async (userId,isCurrent)=>{
      const entry=await cloud.save(userId,item,existing);
      if(!isCurrent())return;
      journal=withEntry(entry);
-     if(originalValues===values && values.length===6 && values.every((value,index)=>value===item.values[index]))onSaved();
-     if(route()[0]==="diario")show();
+     onSaved();
     });
    }else if(writeJournal(withEntry(item)))onSaved();
    return;
@@ -609,9 +637,11 @@ main.addEventListener("click",async event=>{
   case "open":{
    const item=journal.find(entry=>entry.id===arg);
    if(!item)return;
-   values=[...item.values];question=item.question;method=item.method;input="values";activeId=item.id;reflection=item.reflection??"";language=Object.hasOwn(labels,item.language)?item.language:"es";readingMode=item.readingMode==="all"?"all":"guided";
-   topic=item.topic??"";context=item.context??"";followUp="";consultedOn=item.consultedOn??"";
-   location.hash="resultado";return;
+   const {method,question,values,reflection,language,readingMode,topic,context,consultedOn}=item;
+   diaryReading={...newReading(method),values:[...values],activeId:item.id,question:question??"",reflection:reflection??"",
+    language:Object.hasOwn(labels,language)?language:"es",readingMode:readingMode==="all"?"all":"guided",
+    topic:topic??"",context:context??"",consultedOn:consultedOn??""};
+   location.hash="diario/lectura";return;
   }
   case "delete":{
    const dialog=document.querySelector("#delete-dialog");
@@ -621,7 +651,8 @@ main.addEventListener("click",async event=>{
     if(dialog.returnValue!=="delete" || !item)return;
     const withoutEntry=()=>journal.filter(row=>row.id!==arg);
     const onDeleted=()=>{
-     if(activeId===arg)activeId=null;
+     if(casting.activeId===arg)casting.activeId=null;
+     if(diaryReading?.activeId===arg)diaryReading=null;
      if(route()[0]==="diario"){show();main.focus({preventScroll:true});}
     };
     if(cloudConfigured){
