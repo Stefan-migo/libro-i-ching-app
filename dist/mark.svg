@@ -1,1 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><rect width="48" height="48" rx="14" fill="#183631"/><path d="M13 16h22m-22 8h8m6 0h8m-22 8h22" stroke="#f8ecce" stroke-width="3" stroke-linecap="round"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <rect x="3" y="3" width="94" height="94" rx="7" fill="#a32c20"/>
+  <g fill="#f9e8c8">
+    <polygon points="14,48 49,27 71,26 60,39 36,44 17,60"/>
+    <polygon points="40,73 54,57 78,52 85,40 83,58 65,68"/>
+  </g>
+</svg>

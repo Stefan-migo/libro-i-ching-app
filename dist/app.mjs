@@ -118,7 +118,7 @@ function figureIllustration(id) {
 }
 function figureCard(id,label,moving=[]) {
  const row=book[id-1];
- return `<div class="panel">
+ return `<div class="panel result-card">
  <div class="reading-head"><div><p class="eyebrow">${label} · ${number(id)}</p><h2>${html(row.name)}</h2><span class="muted">${html(row.zh)} · ${html(row.pinyin)}</span></div>${stack(figures[id-1],moving)}</div>
  <div class="figure-content">
   ${figureIllustration(id)}
@@ -238,6 +238,7 @@ async function journalOperation(button, operation){
 function route() {return (location.hash.slice(1)||"inicio").split("/");}
 function show(reFocus=false) {
  const [page,id]=route();
+ main.dataset.page=page;
  for(const nav of document.querySelectorAll(".top nav a")) {
   const active=nav.hash===`#${page}`||(page==="hex"&&nav.hash==="#explorar")||(page==="resultado"&&method!=="external"&&nav.hash==="#consultar")||(page==="resultado"&&method==="external"&&nav.hash==="#diario");
   if(active)nav.setAttribute("aria-current","page");else nav.removeAttribute("aria-current");
@@ -274,9 +275,9 @@ function consult() {
  `<div class="workspace"><div class="flow"><section class="panel">
  <label class="field">Tu pregunta <small>Opcional. Describe una situación y qué te interesa comprender o decidir.</small><textarea id="question" maxlength="1200" placeholder="Escribe aquí tu pregunta…">${html(question)}</textarea></label>
  <p class="fine"><a href="#aprender/preguntas">Ideas para formular tu pregunta</a></p>
- <strong>Método</strong><div class="choose">${Object.entries(methods).map(([m,label])=>toggle(label,`method:${m}`,method===m)).join("")}</div>
+ <strong>Método de consulta</strong><div class="choose">${Object.entries(methods).map(([m,label])=>toggle(label,`method:${m}`,method===m)).join("")}</div>
  <strong>Cómo registrar la tirada</strong><div class="choose">${method==="coins"?toggle("Registrar monedas","input:coins",input==="coins"):""}${toggle("Introducir valores","input:values",input==="values")}${toggle("Simular","input:sim",input==="sim")}</div>
- </section><section class="panel"><p class="eyebrow">${step<=6?`LÍNEA ${step} DE 6`:"TIRADA COMPLETA"}</p><h2>${step<=6?(step===1?"La línea de abajo":step===6?"La línea de arriba":"Añade una línea"):"Tu hexagrama está listo"}</h2>
+ </section><section class="panel casting-panel"><progress class="cast-progress" max="6" value="${values.length}" aria-label="Líneas registradas"></progress><p class="eyebrow">${step<=6?`LÍNEA ${step} DE 6`:"TIRADA COMPLETA"}</p><h2>${step<=6?(step===1?"La línea de abajo":step===6?"La línea de arriba":"Añade una línea"):"Tu hexagrama está listo"}</h2>
  ${step<=6?(input==="coins"?coinsControl:input==="values"?directControl:simControl):`<a href="#resultado" class="button primary">Leer el resultado ↗</a>`}
  <div class="choose">${values.length?action("Deshacer última línea","undo"):""}${values.length?action("Reiniciar tirada","reset"):""}</div>
  <p class="toast" role="status"></p></section>
@@ -317,7 +318,9 @@ function reading(){
  <p class="toast" role="status"></p></section></div>`;
 }
 function gridTile(entry){
- return `<a class="tile" href="#hex/${entry.id}"><span class="number">${number(entry.id)} <span>${html(entry.zh)}</span></span>${stack(figures[entry.id-1],[],true)}<b>${html(entry.name)}</b></a>`;
+ return `<a class="tile" href="#hex/${entry.id}">
+ <img src="./illustrations/${number(entry.id)}.webp" alt="" width="720" height="960" loading="lazy" decoding="async">
+ <div class="tile-copy"><span class="number">${number(entry.id)} <span>${html(entry.zh)}</span></span>${stack(figures[entry.id-1],[],true)}<b>${html(entry.name)}</b></div></a>`;
 }
 function filterGrid(value){
  const search=clean(value.trim());
@@ -334,7 +337,7 @@ function builderSection(){
 }
 function explore(){
  return heading("EXPLORADOR","Los 64 hexagramas","Encuentra una figura por número, nombre o idea, o constrúyela cambiando sus líneas.")+
- `<div class="workspace"><section class="panel"><label class="field">Buscar un hexagrama<input id="search" type="search" placeholder="Ej. 24, Retorno o Fù"></label><span class="fine" id="hex-count" role="status"></span><div id="hex-grid" class="grid"></div></section><div id="builder">${builderSection()}</div></div>`;
+ `<div class="atlas"><div class="atlas-toolbar"><label class="field">Buscar un hexagrama<input id="search" type="search" placeholder="Ej. 24, Retorno o Fù"></label><span class="fine" id="hex-count" role="status"></span></div><details class="atlas-builder"><summary>Construir con líneas o trigramas</summary><div id="builder">${builderSection()}</div></details><div id="hex-grid" class="grid"></div></div>`;
 }
 function hexDetail(id){
  if(!book[id-1]) return heading("EXPLORADOR","No encontramos esa figura","El orden del rey Wen contiene 64 hexagramas.")+`<a href="#explorar">Volver al explorador</a>`;
@@ -361,7 +364,7 @@ function learn(){
  <section class="panel"><p class="eyebrow">OCHO FIGURAS</p><h3>¿Por qué tres líneas?</h3><p>A una línea le puedes añadir otra yin o yang y obtener cuatro combinaciones. Añade una tercera y obtienes ocho. En el <i>Shuogua</i>, Cielo, Tierra y humanidad dan sentido a esas tres posiciones. Es una explicación simbólica tradicional. El origen histórico de las figuras es una cuestión distinta.</p></section>
  <section class="panel"><p class="eyebrow">64 COMBINACIONES</p><h3>Dos trigramas se encuentran</h3><p>Combina un trigrama inferior con otro superior. Elige uno de ocho para cada lugar y obtienes 8 × 8 figuras. En una tirada las líneas 1 a 3 forman el de abajo y las líneas 4 a 6, el de arriba.</p></section></div>
  <section class="panel"><h2>De la unidad a los trigramas</h2><p>El <i>Xici</i> describe un orden simbólico. Del <i>Taiji</i> (Gran Último) surgen dos modalidades, de ellas cuatro imágenes y de estas los ocho trigramas. La tercera línea sigue siendo yin o yang. En la lectura de las tres potencias, la línea inferior corresponde a la Tierra, la intermedia a la humanidad y la superior al Cielo.</p></section>
- <section><div class="page-head"><p class="eyebrow">BĀGUÀ · 八卦</p><h2 style="font-size:46px;margin-top:7px">Los ocho trigramas</h2></div><div class="trigram-grid">${trigramOrder.map(bits=>{const [zh,pinyin,title,quality,description]=trigrams[bits];return `<article class="panel">${stack(bits,[],true)}<h3>${title}</h3><span class="fine">${zh} · ${pinyin} · ${quality}</span><p>${description}</p></article>`;}).join("")}</div></section>
+ <section><div class="page-head"><p class="eyebrow">BĀGUÀ · 八卦</p><h2 class="guide-section-title">Los ocho trigramas</h2></div><div class="trigram-grid">${trigramOrder.map(bits=>{const [zh,pinyin,title,quality,description]=trigrams[bits];return `<article class="panel trigram-card"><img src="./trigrams/${bits}.webp" alt="" width="480" height="640" loading="lazy" decoding="async"><div class="trigram-copy">${stack(bits,[],true)}<h3>${title}</h3><span class="fine">${zh} · ${pinyin} · ${quality}</span><p>${description}</p></div></article>`;}).join("")}</div></section>
  <div id="builder">${builderSection()}</div>
  <section class="panel"><h2>Qué cambia en una tirada</h2><p>Una línea puede ser yin o yang, y además estable o cambiante. Suma las tres monedas con cara = 3 y cruz = 2, o registra el total obtenido con varillas.</p>
  <table><thead><tr><th>Valor</th><th>Línea inicial</th><th>En el resultado</th><th>Monedas</th><th>Varillas*</th></tr></thead><tbody><tr><th>6</th><td>Yin cambiante</td><td>Yang</td><td>1/8</td><td>1/16</td></tr><tr><th>7</th><td>Yang estable</td><td>Yang</td><td>3/8</td><td>5/16</td></tr><tr><th>8</th><td>Yin estable</td><td>Yin</td><td>3/8</td><td>7/16</td></tr><tr><th>9</th><td>Yang cambiante</td><td>Yin</td><td>1/8</td><td>3/16</td></tr></tbody></table>
@@ -439,7 +442,7 @@ function diary(){
  if(cloudConfigured && !account) return heading("DIARIO","Tus consultas","Inicia sesión para acceder a tu diario personal.")+'<a class="button primary" href="#cuenta">Ir a mi cuenta</a>';
  const list=journal.map(item=>{
   const result=calculate(item.values);
-  return `<article class="journal-item"><p class="eyebrow">${consultationDate(item)} · ${methodLabel(item.method)}${item.topic?` · ${html(item.topic)}`:""}</p><h3>${html(item.question||"Consulta sin pregunta")}</h3><div>${hexLink(result.initial,null)}${result.changes.length?` → ${hexLink(result.final,null)}`:""}</div>${item.reflection?`<p>${html(item.reflection)}</p>`:""}${item.followUps?.length?`<span class="fine">Relecturas: ${item.followUps.length}</span>`:""}<div class="actions">${action("Abrir lectura",`open:${item.id}`,"primary")}${action("Eliminar",`delete:${item.id}`)}</div></article>`;
+  return `<article class="journal-item"><a class="journal-image" href="#hex/${result.initial}" aria-label="Abrir ficha del hexagrama ${result.initial}"><img src="./illustrations/${number(result.initial)}.webp" alt="" width="720" height="960" loading="lazy"></a><div class="journal-copy"><p class="eyebrow">${consultationDate(item)} · ${methodLabel(item.method)}${item.topic?` · ${html(item.topic)}`:""}</p><h3>${html(item.question||"Consulta sin pregunta")}</h3><div>${hexLink(result.initial,null)}${result.changes.length?` → ${hexLink(result.final,null)}`:""}</div>${item.reflection?`<p>${html(item.reflection)}</p>`:""}${item.followUps?.length?`<span class="fine">Relecturas: ${item.followUps.length}</span>`:""}<div class="actions">${action("Abrir lectura",`open:${item.id}`,"primary")}${action("Eliminar",`delete:${item.id}`)}</div></div></article>`;
  });
  const intro=cloudConfigured?"Las consultas se guardan en tu cuenta. Puedes añadir una relectura fechada.":"Guarda tus consultas en este navegador. Puedes añadir una relectura fechada.";
  const cloudTools=cloudConfigured?`<div class="actions">${journalReady&&!journalLoading?`<a class="button primary" href="#diario/registrar">Registrar consulta externa</a>`:""}<a class="button" href="#cuenta">Mi cuenta</a>${!journalLoading?action("Recargar diario","reload-journal"):""}${journalReady&&!journalLoading&&localEntries.length&&!importedLocally.has(account.id)?action("Importar consultas de este navegador","import-journal"):""}</div><p class="toast" role="status">${html(journalLoading?"Cargando tus consultas…":journalMessage)}</p>`:"";

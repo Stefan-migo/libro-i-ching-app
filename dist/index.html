@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#f6f2e8">
+<meta name="theme-color" content="#f3e8d4">
 <meta name="description" content="Consulta el I Ching con monedas o milenrama y explora el Libro de los Cambios.">
 <title>I Ching · El libro de los cambios</title>
 <link rel="manifest" href="./manifest.webmanifest">
@@ -11,9 +11,10 @@
 <link rel="icon" href="./mark.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="./style.css">
 <link rel="stylesheet" href="./account.css">
+<link rel="stylesheet" href="./edition.css">
 </head>
 <body>
 <a href="#contenido" class="skip">Saltar al contenido</a>
@@ -22,19 +23,35 @@
 <nav aria-label="Navegación principal"><a href="#consultar">Consultar</a><a href="#explorar">Hexagramas</a><a href="#aprender">Aprender</a><a href="#diario">Diario</a><a href="#cuenta" id="account-nav" hidden>Cuenta</a></nav>
 </div></header>
 <main class="shell" id="contenido" tabindex="-1"></main>
-<footer class="shell footer"><span>周易 &nbsp; I Ching</span><div class="footer-links"><a href="#instalar">Instalar app</a><a href="#fuentes">Textos, método y créditos</a></div></footer>
+<footer class="shell footer"><a class="footer-brand" href="#inicio"><img src="./mark.svg" width="24" height="24" alt=""> I Ching</a><div class="footer-links"><a href="#instalar">Instalar app</a><a href="#fuentes">Textos, método y créditos</a></div></footer>
 <template id="landing">
 <section class="hero">
-  <div class="hero-copy"><p class="eyebrow"><span></span> YÌ JĪNG · 周易</p>
-  <h1>El libro de<br>los <em>cambios</em></h1>
-  <p>Consulta el I Ching, registra tus tiradas y vuelve a ellas para estudiar cómo cambia tu lectura.</p>
-  <div class="actions"><a class="button primary" href="#consultar">Iniciar consulta <span aria-hidden="true">↗</span></a><a class="button ghost" href="#aprender">Cómo funciona</a></div></div>
-  <div class="hero-art" aria-hidden="true"><div class="orbit orbit1"></div><div class="orbit orbit2"></div><div class="orbit orbit3"></div><div class="sun"></div><div class="art-lines"><i></i><i class="split"></i><i></i><i class="split"></i><i></i><i class="split"></i></div><span class="art-caption">未 濟 <small>64 · ANTES DE LA CONSUMACIÓN</small></span></div>
+  <div class="hero-copy">
+    <p class="eyebrow">I CHING <span aria-hidden="true">/</span> 周易</p>
+    <h1>El libro de<br>los <em>cambios</em></h1>
+    <p>Formula una pregunta, lee tu hexagrama y vuelve a tus consultas en el diario.</p>
+    <div class="actions">
+      <a class="button primary" href="#consultar">Iniciar consulta <span aria-hidden="true">↗</span></a>
+      <a class="button ghost" href="#diario">Abrir diario</a>
+    </div>
+  </div>
+  <a class="cover-art" href="#hex/1" aria-label="Explorar el hexagrama 1, Lo Creativo">
+    <img src="./illustrations/01.webp" alt="Pinceladas rojas y negras ascienden sobre el paisaje" width="720" height="960" fetchpriority="high">
+    <span class="cover-caption">01 <span aria-hidden="true">/</span> Lo Creativo <span aria-hidden="true">↗</span></span>
+  </a>
 </section>
-<section class="intro"><div><p class="eyebrow">CONSULTA Y ESTUDIO</p><h2>Tres maneras de entrar</h2></div>
-<div class="entry-grid"><a class="entry" href="#consultar"><span class="entry-icon" aria-hidden="true">◉</span><span class="arrow" aria-hidden="true">↗</span><h3>Realizar una tirada</h3><p>Tres monedas o varillas de milenrama, con registro manual y simulación.</p></a>
-<a class="entry" href="#explorar"><span class="entry-icon" aria-hidden="true">☷</span><span class="arrow" aria-hidden="true">↗</span><h3>Los 64 hexagramas</h3><p>Explora sus imágenes, su lectura general y los textos de cada línea.</p></a>
-<a class="entry" href="#aprender"><span class="entry-icon" aria-hidden="true">◒</span><span class="arrow" aria-hidden="true">↗</span><h3>Aprender el I Ching</h3><p>Formula preguntas, practica con monedas o milenrama y lleva un diario de consultas.</p></a></div></section>
+<section class="junction" aria-label="Explorar el libro">
+  <a class="junction-item" href="#explorar">
+    <img src="./illustrations/24.webp" alt="" width="720" height="960" loading="lazy">
+    <div><h2>Los 64 hexagramas</h2><p>Busca una figura y explora su imagen, sus textos y sus líneas.</p></div>
+    <span class="junction-arrow" aria-hidden="true">↗</span>
+  </a>
+  <a class="junction-item" href="#aprender">
+    <img src="./trigrams/010.webp" alt="" width="480" height="640" loading="lazy">
+    <div><h2>Aprender el I Ching</h2><p>Conoce los trigramas y prepara tu primera consulta.</p></div>
+    <span class="junction-arrow" aria-hidden="true">↗</span>
+  </a>
+</section>
 </template>
 <noscript>Activa JavaScript para calcular y explorar los hexagramas.</noscript>
 <script type="module" src="./pwa.mjs"></script>
